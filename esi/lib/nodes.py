@@ -12,8 +12,10 @@
 
 import concurrent.futures
 import warnings
+import json
 
 from openstack import exceptions
+from keystoneauth1.exceptions.http import HttpError
 
 from esi.lib import networks
 
@@ -243,11 +245,18 @@ def network_attach(connection, node, attach_info):
 
     # TODO(ajamias) There should be a function in openstacksdk that specifies
     # a bare metal port's MAC address to attach a network port to
-    connection.session.post(
-        "{0}/v1/nodes/{1}/vifs".format(baremetal_endpoint, node.id),
-        headers={"X-OpenStack-Ironic-API-Version": OPENSTACK_IRONIC_API_VERSION},
-        json=data,
-    )
+
+    try:
+        connection.session.post(
+            f"{baremetal_endpoint}/v1/nodes/{node.id}/vifs",
+            headers={"X-OpenStack-Ironic-API-Version": OPENSTACK_IRONIC_API_VERSION},
+            json=data,
+        )
+    except HttpError as e:
+        body = e.response.json()
+        message = json.loads(body.get("error_message", "{}")).get("faultstring", str(e))
+        raise exceptions.ResourceFailure(message)
+
     network_port = connection.network.find_port(network_port.id, ignore_missing=False)
 
     networks_dict = {}
